@@ -22,6 +22,13 @@
       flex-grow: 1;
       padding: 5px;
     }
+    .browse-list {
+      float: left;
+      margin-right: 15px;
+    }
+    .browse-list h1 {
+      font-size: medium;
+    }
   </style>
 </head>
 <body>
@@ -31,6 +38,58 @@
     <input type="text" id="lod-uri" placeholder="LODのURIを入力">
     <button onclick="fetchSPARQLData()">読み込み</button>
   </div>
+  <div class="browse-list">
+    <ul>
+      <li><a href="javascript:fetchSubjectData('https://w3id.org/jp-textbook/curriculum/小学校/2020')">小学校</a></li>
+      <li><a href="javascript:fetchSubjectData('https://w3id.org/jp-textbook/curriculum/中学校/2021')">中学校</a></li>
+      <li><a href="javascript:fetchSubjectData('https://w3id.org/jp-textbook/curriculum/高等学校/2022')">高等学校</a></li>
+    </ul>
+  </div>
+  <nav class="browse-list" style="visibility: hidden">
+    <h1>種目</h1>
+    <ul id="subject-list">
+    </ul>
+  </nav>
+  <nav class="browse-list" style="visibility: hidden;">
+    <h1>教科書</h1>
+    <ul id="subject-list">
+    </ul>
+  </nav>
+  <script>
+    async function fetchSubjectData(uri) {
+      if (!uri) {
+        alert("Subject URI not found");
+        return;
+      }
+      const endpoint = "https://dydra.com/masao/jp-textbook/sparql";
+      const query = `PREFIX t: <https://w3id.org/jp-textbook/>
+                     PREFIX schema: <http://schema.org/>
+                     select * where {
+                     <${uri}> t:hasSubjectArea ?area.
+                     ?area t:hasSubject ?subject.
+                     ?subject schema:name ?subject_label.
+                     ?subject <http://purl.org/linked-data/cube#order> ?order.
+                     FILTER (lang(?subject_label) = 'ja')
+                     } order by ?order`;
+      const url = endpoint + "?query=" + encodeURIComponent(query) + "&format=json";
+      try {
+        const response = await fetch(url, { headers: { "Accept": "application/sparql-results+json" } });
+        const data = await response.json();
+        //let subjects = [];
+        let subject = document.getElementById("subject-list");
+        console.log(subject.parentElement.style.visibility);
+        subject.parentElement.style.visibility = "visible";
+        console.log(subject.parentElement.style.visibility);
+        subject.innerHTML = "";
+        for (const row of data.results.bindings) {
+          subject.innerHTML += `<li><a href="${row.subject.value}">${row.subject_label.value}</li>`;
+        }
+      } catch (error) {
+        console.error("種目データの取得に失敗しました:", error);
+        alert("種目データの取得に失敗しました。");
+      }
+    };
+  </script>
   <script>
     async function fetchSPARQLData() {
       const uri = document.getElementById('lod-uri').value;
@@ -38,7 +97,6 @@
         alert("LODのURIを入力してください。");
         return;
       }
-      
       const endpoint = "https://dydra.com/masao/jp-textbook/sparql";
       const query = `PREFIX t: <https://w3id.org/jp-textbook/>
                      PREFIX schema: <http://schema.org/>
