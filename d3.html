@@ -84,6 +84,15 @@
       const svg = d3.select("#graph").attr("width", width).attr("height", height);
       svg.selectAll("*").remove();
 
+      // ツールチップ用のdivを作成
+      const tooltip = d3.select("body").append("div")
+        .style("position", "absolute")
+        .style("visibility", "hidden")
+        .style("background", "lightgray")
+        .style("padding", "5px")
+        .style("border-radius", "5px")
+        .style("font-size", "12px");
+
       const simulation = d3.forceSimulation(nodes)
         .force("link", d3.forceLink(links).id(d => d.id).distance(100))
         .force("charge", d3.forceManyBody().strength(-300))
@@ -106,10 +115,25 @@
           .on("start", dragstarted)
           .on("drag", dragged)
           .on("end", dragended));
+      
+      node.on("mouseover", function (event, d) {
+        tooltip.style("visibility", "visible").text( d.label );
+      })
+      .on("mousemove", function (event) {
+        tooltip.style("top", (event.pageY + 10) + "px")
+          .style("left", (event.pageX + 10) + "px");
+      })
+      .on("mouseout", function () {
+        tooltip.style("visibility", "hidden");
+      });
 
       const label = svg.selectAll(".label")
         .data(nodes)
-        .enter().append("text")
+        .enter()
+        .append("a")
+        .attr("xlink:href", d => d.id)
+        .attr("target", "_blank")
+        .append("text")
         .attr("dy", -10)
         .attr("text-anchor", "middle")
         .attr("font-size", "10px")
