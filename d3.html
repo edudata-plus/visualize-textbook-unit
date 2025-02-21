@@ -46,16 +46,53 @@
     </ul>
   </div>
   <nav class="browse-list" style="visibility: hidden">
-    <h1>種目</h1>
+    <h1>種目一覧</h1>
     <ul id="subject-list">
     </ul>
   </nav>
   <nav class="browse-list" style="visibility: hidden;">
-    <h1>教科書</h1>
-    <ul id="subject-list">
+    <h1>教科書一覧</h1>
+    <ul id="textbook-list">
     </ul>
   </nav>
   <script>
+    function load_textbook(uri) {
+      let input = document.getElementById("lod-uri");
+      input.value = uri;
+    }
+    async function fetchTextbookData(uri) {
+      if (!uri) {
+        alert("Subject URI not found");
+        return;
+      }
+      const endpoint = "https://dydra.com/masao/jp-textbook/sparql";
+      const query = `PREFIX t: <https://w3id.org/jp-textbook/>
+                     PREFIX schema: <http://schema.org/>
+                     select * where {
+                     ?textbook t:subject <${uri}>.
+                     ?textbook schema:name ?name.
+                     ?textbook a t:Textbook.
+                     } order by ?textbook`;
+      const url = endpoint + "?query=" + encodeURIComponent(query) + "&format=json";
+      try {
+        const response = await fetch(url, { headers: { "Accept": "application/sparql-results+json" } });
+        const data = await response.json();
+        let list = document.getElementById("textbook-list");
+        console.log(list.parentElement.style.visibility);
+        list.parentElement.style.visibility = "visible";
+        console.log(list.parentElement.style.visibility);
+        list.innerHTML = "";
+        for (const row of data.results.bindings) {
+          console.log(row)
+          list.innerHTML += `<li><a href="javascript:load_textbook('${row.textbook.value}')">${row.name.value}</a> (<a href="${row.textbook.value}">LOD</a>)</li>`;
+        }
+      } catch (error) {
+        console.error("教科書データの取得に失敗しました:", error);
+        alert("教科書データの取得に失敗しました。");
+      }
+
+    }
+
     async function fetchSubjectData(uri) {
       if (!uri) {
         alert("Subject URI not found");
@@ -82,7 +119,7 @@
         console.log(subject.parentElement.style.visibility);
         subject.innerHTML = "";
         for (const row of data.results.bindings) {
-          subject.innerHTML += `<li><a href="${row.subject.value}">${row.subject_label.value}</li>`;
+          subject.innerHTML += `<li><a href="javascript:fetchTextbookData('${row.subject.value}')">${row.subject_label.value}</li>`;
         }
       } catch (error) {
         console.error("種目データの取得に失敗しました:", error);
