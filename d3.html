@@ -24,6 +24,7 @@
     #lod-loaded {
       font-size: small;
       padding: 5px;
+      border: solid gray 1px;
     }
     #lod-loaded h1 {
       margin: 0;
@@ -228,6 +229,8 @@
         window.simulation.nodes([]); // ノードデータを空に
         window.simulation.force("link").links([]); // リンクデータも空に
       }
+
+      d3.select("#lod-loaded").html("");
     }
 
     function renderGraph(newNodes, newLinks, clear = true) {
