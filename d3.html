@@ -18,6 +18,9 @@
     #lod-input label {
       margin-right: 10px;
     }
+    #lod-input .clear {
+
+    }
     #lod-uri {
       flex-grow: 1;
       padding: 5px;
@@ -34,17 +37,23 @@
 <body>
   <svg id="graph"></svg>
   <div id="lod-input">
+    <!--
     <label for="lod-uri">教科書LOD URI:</label>
     <input type="text" id="lod-uri" placeholder="LODのURIを入力">
     <button onclick="fetchSPARQLData()">読み込み</button>
+    -->
+    <ul id="lod-loaded">
+    </ul>
+    <button class="clear" onclick="reset()">リセット</button>
   </div>
-  <div class="browse-list">
+  <nav class="browse-list">
+    <h1>学校種別</h1>
     <ul>
       <li><a href="javascript:fetchSubjectData('https://w3id.org/jp-textbook/curriculum/小学校/2020')">小学校</a></li>
       <li><a href="javascript:fetchSubjectData('https://w3id.org/jp-textbook/curriculum/中学校/2021')">中学校</a></li>
       <li><a href="javascript:fetchSubjectData('https://w3id.org/jp-textbook/curriculum/高等学校/2022')">高等学校</a></li>
     </ul>
-  </div>
+  </nav>
   <nav class="browse-list" style="visibility: hidden">
     <h1>種目一覧</h1>
     <ul id="subject-list">
@@ -68,23 +77,22 @@
       const endpoint = "https://dydra.com/masao/jp-textbook/sparql";
       const query = `PREFIX t: <https://w3id.org/jp-textbook/>
                      PREFIX schema: <http://schema.org/>
+                     PREFIX dct: <http://purl.org/dc/terms/>
                      select * where {
+                     ?textbook a t:Textbook.
                      ?textbook t:subject <${uri}>.
                      ?textbook schema:name ?name.
-                     ?textbook a t:Textbook.
+                     ?textbook dct:bibliographicCitation ?bib.
                      } order by ?textbook`;
       const url = endpoint + "?query=" + encodeURIComponent(query) + "&format=json";
       try {
         const response = await fetch(url, { headers: { "Accept": "application/sparql-results+json" } });
         const data = await response.json();
         let list = document.getElementById("textbook-list");
-        console.log(list.parentElement.style.visibility);
         list.parentElement.style.visibility = "visible";
-        console.log(list.parentElement.style.visibility);
         list.innerHTML = "";
         for (const row of data.results.bindings) {
-          console.log(row)
-          list.innerHTML += `<li><a href="javascript:load_textbook('${row.textbook.value}')">${row.name.value}</a> (<a href="${row.textbook.value}">LOD</a>)</li>`;
+          list.innerHTML += `<li><a href="javascript:load_textbook('${row.textbook.value}')">${row.bib.value}</a>  <a href="javascript:load_textbook('${row.textbook.value}', false)" title="現在の描画に追加する">＋</a>  <a href="${row.textbook.value}" target="_blank"><img src="https://www.w3.org/RDF/icons/rdf_flyer.24" title="LOD" alt="LOD"></a></li>`;
         }
       } catch (error) {
         console.error("教科書データの取得に失敗しました:", error);
@@ -92,7 +100,6 @@
       }
 
     }
-
     async function fetchSubjectData(uri) {
       if (!uri) {
         alert("Subject URI not found");
@@ -114,9 +121,7 @@
         const data = await response.json();
         //let subjects = [];
         let subject = document.getElementById("subject-list");
-        console.log(subject.parentElement.style.visibility);
         subject.parentElement.style.visibility = "visible";
-        console.log(subject.parentElement.style.visibility);
         subject.innerHTML = "";
         for (const row of data.results.bindings) {
           subject.innerHTML += `<li><a href="javascript:fetchTextbookData('${row.subject.value}')">${row.subject_label.value}</li>`;
@@ -169,6 +174,17 @@
       }
     }
 
+    function reset() {
+      const svg = d3.select("#graph");
+      svg.selectAll("*").remove();
+      d3.select("#tooltip").remove();
+      if (window.simulation) {
+        window.simulation.stop();  // シミュレーション停止
+        window.simulation.nodes([]); // ノードデータを空に
+        window.simulation.force("link").links([]); // リンクデータも空に
+      }
+    }
+
     function renderGraph(newNodes, newLinks, clear = true) {
       const width = 800, height = 600;
   
@@ -181,7 +197,7 @@
           .attr("height", height);
       }
       if (clear) {
-        svg.selectAll("*").remove();
+        reset();
       }
 
       // ツールチップ用のdivを確保（なければ作成）
