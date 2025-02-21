@@ -128,12 +128,7 @@
     };
   </script>
   <script>
-    async function fetchSPARQLData() {
-      const uri = document.getElementById('lod-uri').value;
-      if (!uri) {
-        alert("LODのURIを入力してください。");
-        return;
-      }
+    async function load_textbook(uri, clear = true) {
       const endpoint = "https://dydra.com/masao/jp-textbook/sparql";
       const query = `PREFIX t: <https://w3id.org/jp-textbook/>
                      PREFIX schema: <http://schema.org/>
@@ -167,52 +162,98 @@
           }
           links.push({ source: row.unit.value, target: row.item.value });
         }
-        renderGraph(nodes, links);
+        renderGraph(nodes, links, clear);
       } catch (error) {
         console.error("データの取得に失敗しました:", error);
         alert("データの取得に失敗しました。");
       }
     }
 
-    function renderGraph(nodes, links) {
+    function renderGraph(newNodes, newLinks, clear = true) {
       const width = 800, height = 600;
-      const svg = d3.select("#graph").attr("width", width).attr("height", height);
-      svg.selectAll("*").remove();
+  
+      // 既存のデータ取得
+      let svg = d3.select("#graph");
+      if (svg.empty()) {
+        svg = d3.select("body").append("svg")
+          .attr("id", "graph")
+          .attr("width", width)
+          .attr("height", height);
+      }
+      if (clear) {
+        svg.selectAll("*").remove();
+      }
 
-      // ツールチップ用のdivを作成
-      const tooltip = d3.select("body").append("div")
-        .style("position", "absolute")
-        .style("visibility", "hidden")
-        .style("background", "lightgray")
-        .style("padding", "5px")
-        .style("border-radius", "5px")
-        .style("font-size", "12px");
+      // ツールチップ用のdivを確保（なければ作成）
+      let tooltip = d3.select("#tooltip");
+      if (tooltip.empty()) {
+        tooltip = d3.select("body").append("div")
+          .attr("id", "tooltip")
+          .style("position", "absolute")
+          .style("visibility", "hidden")
+          .style("background", "lightgray")
+          .style("padding", "5px")
+          .style("border-radius", "5px")
+          .style("font-size", "12px");
+      }
 
-      const simulation = d3.forceSimulation(nodes)
-        .force("link", d3.forceLink(links).id(d => d.id).distance(100))
-        .force("charge", d3.forceManyBody().strength(-300))
-        .force("center", d3.forceCenter(width / 2, height / 2))
-        .force("x", d3.forceX(width / 2).strength(0.1))
-        .force("y", d3.forceY(height / 2).strength(0.1));
-      
+      // シミュレーションのグローバル変数を確保
+      if (!window.simulation) {
+        window.simulation = d3.forceSimulation()
+          .force("link", d3.forceLink().id(d => d.id).distance(100))
+          .force("charge", d3.forceManyBody().strength(-300))
+          .force("center", d3.forceCenter(width / 2, height / 2))
+          .force("x", d3.forceX(width / 2).strength(0.1))
+          .force("y", d3.forceY(height / 2).strength(0.1));
+      }
+      const simulation = window.simulation;
+
+      // すでに描画済みのデータを取得
+      let existingNodes = simulation.nodes();
+      let existingLinks = simulation.force("link").links();
+
+      // 既存のノードIDをセットに
+      const existingNodeIds = new Set(existingNodes.map(n => n.id));
+
+      // 既存のリンク(ソース, ターゲット)ペアをセットに
+      const existingLinkPairs = new Set(existingLinks.map(l => JSON.stringify([l.source.id, l.target.id])));
+
+      // 重複しない新規ノードを追加
+      newNodes = newNodes.filter(n => !existingNodeIds.has(n.id));
+      const updatedNodes = [...existingNodes, ...newNodes];
+
+      // 重複しない新規リンクを追加
+      newLinks = newLinks.filter(l => !existingLinkPairs.has(JSON.stringify([l.source, l.target])));
+      const updatedLinks = [...existingLinks, ...newLinks];
+
+      // リンクの描画・更新
       const link = svg.selectAll(".link")
-        .data(links)
-        .enter().append("line")
+        .data(updatedLinks, d => d.source.id + "-" + d.target.id);
+
+      link.enter().append("line")
+        .attr("class", "link")
         .attr("stroke", "#999")
-        .attr("stroke-width", 2);
-      
+        .attr("stroke-width", 2)
+        .merge(link);
+
+      link.exit().remove();
+
+      // ノードの描画・更新
       const node = svg.selectAll(".node")
-        .data(nodes)
-        .enter().append("circle")
+        .data(updatedNodes, d => d.id);
+
+      const nodeEnter = node.enter().append("circle")
+        .attr("class", "node")
         .attr("r", 10)
         .attr("fill", d => d.group === "textbook" ? "blue" : d.group === "unit" ? "green" : "red")
         .call(d3.drag()
           .on("start", dragstarted)
           .on("drag", dragged)
           .on("end", dragended));
-      
-      node.on("mouseover", function (event, d) {
-        tooltip.style("visibility", "visible").text( d.label );
+
+      // ツールチップイベントを追加
+      nodeEnter.on("mouseover", function (event, d) {
+        tooltip.style("visibility", "visible").text(d.label);
       })
       .on("mousemove", function (event) {
         tooltip.style("top", (event.pageY + 10) + "px")
@@ -222,39 +263,56 @@
         tooltip.style("visibility", "hidden");
       });
 
+      nodeEnter.merge(node);
+      node.exit().remove();
+
+      // ラベルの描画・更新
       const label = svg.selectAll(".label")
-        .data(nodes)
-        .enter()
+        .data(updatedNodes, d => d.id);
+
+      const labelEnter = label.enter()
         .append("a")
         .attr("xlink:href", d => d.id)
         .attr("target", "_blank")
         .append("text")
+        .attr("class", "label")
         .attr("dy", -10)
         .attr("text-anchor", "middle")
         .attr("font-size", "10px")
         .text(d => d.label);
-      
+      labelEnter.merge(label);
+      label.exit().remove();
+
+      // シミュレーション更新
+      simulation.nodes(updatedNodes);
+      simulation.force("link").links(updatedLinks);
+      simulation.alpha(1).restart();
+
       simulation.on("tick", () => {
-        link.attr("x1", d => d.source.x)
-            .attr("y1", d => d.source.y)
-            .attr("x2", d => d.target.x)
-            .attr("y2", d => d.target.y);
-        
-        node.attr("cx", d => d.x).attr("cy", d => d.y);
-        label.attr("x", d => d.x).attr("y", d => d.y);
+        svg.selectAll(".link")
+          .attr("x1", d => d.source.x)
+          .attr("y1", d => d.source.y)
+          .attr("x2", d => d.target.x)
+          .attr("y2", d => d.target.y);
+
+        svg.selectAll(".node")
+          .attr("cx", d => d.x)
+          .attr("cy", d => d.y);
+
+        svg.selectAll(".label")
+          .attr("x", d => d.x)
+          .attr("y", d => d.y);
       });
-      
+
       function dragstarted(event, d) {
         if (!event.active) simulation.alphaTarget(0.3).restart();
         d.fx = d.x;
         d.fy = d.y;
       }
-      
       function dragged(event, d) {
         d.fx = event.x;
         d.fy = event.y;
       }
-      
       function dragended(event, d) {
         if (!event.active) simulation.alphaTarget(0);
         d.fx = null;
