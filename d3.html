@@ -19,7 +19,18 @@
       margin-right: 10px;
     }
     #lod-input .clear {
-
+      margin-right: 20px;
+    }
+    #lod-loaded {
+      font-size: small;
+      padding: 5px;
+    }
+    #lod-loaded h1 {
+      margin: 0;
+      font-size: small;
+    }
+    #lod-loaded ul {
+      margin: 0;
     }
     #lod-uri {
       flex-grow: 1;
@@ -42,9 +53,9 @@
     <input type="text" id="lod-uri" placeholder="LODのURIを入力">
     <button onclick="fetchSPARQLData()">読み込み</button>
     -->
-    <ul id="lod-loaded">
-    </ul>
     <button class="clear" onclick="reset()">リセット</button>
+    <div id="lod-loaded">
+    </div>
   </div>
   <nav class="browse-list">
     <h1>学校種別</h1>
@@ -65,10 +76,6 @@
     </ul>
   </nav>
   <script>
-    function load_textbook(uri) {
-      let input = document.getElementById("lod-uri");
-      input.value = uri;
-    }
     async function fetchTextbookData(uri) {
       if (!uri) {
         alert("Subject URI not found");
@@ -137,11 +144,13 @@
       const endpoint = "https://dydra.com/masao/jp-textbook/sparql";
       const query = `PREFIX t: <https://w3id.org/jp-textbook/>
                      PREFIX schema: <http://schema.org/>
-                     SELECT ?unit ?name ?item ?title WHERE {
+                     PREFIX dct: <http://purl.org/dc/terms/>
+                     SELECT ?unit ?name ?item ?title ?bib WHERE {
                        ?unit a t:TeachingUnit.
                        ?unit schema:workExample ?w.
                        ?w schema:isPartOf <${uri}>.
-                       <${uri}> schema:name ?title.
+                       <${uri}> schema:name ?title;
+                         dct:bibliographicCitation ?bib.
                        ?unit schema:name ?name.
                        ?unit <https://w3id.org/jp-cos/cosItem> ?item.
                      }`;
@@ -168,6 +177,19 @@
           links.push({ source: row.unit.value, target: row.item.value });
         }
         renderGraph(nodes, links, clear);
+
+        let elem = d3.select("#lod-loaded");
+        if (clear) {
+          elem.html("");
+        }
+        let ul = elem.select("ul");
+        if (ul.empty()) {
+          elem.append("h1").text("描画データ")
+          ul = elem.append("ul");
+        }
+        ul.append("li").text(data.results.bindings[0].bib.value + " ")
+          .append("a").attr("href", uri)
+          .append("img").attr("src", "https://www.w3.org/RDF/icons/rdf_flyer.24").attr("height", 20)
       } catch (error) {
         console.error("データの取得に失敗しました:", error);
         alert("データの取得に失敗しました。");
@@ -282,27 +304,25 @@
       // リンクの描画
       const link = zoomContainer.selectAll(".link")
         .data(window.graphData.links, d => d.source.id + "-" + d.target.id);
+      link.enter().append("line")
+        .attr("class", "link")
+        .attr("stroke", "#999")
+        .attr("stroke-width", 2)
+        .merge(link);
+      link.exit().remove();
 
-  link.enter().append("line")
-    .attr("class", "link")
-    .attr("stroke", "#999")
-    .attr("stroke-width", 2)
-    .merge(link);
+      // ノードの描画
+      const node = zoomContainer.selectAll(".node")
+        .data(window.graphData.nodes, d => d.id);
 
-  link.exit().remove();
-
-  // ノードの描画
-  const node = zoomContainer.selectAll(".node")
-    .data(window.graphData.nodes, d => d.id);
-
-  const nodeEnter = node.enter().append("circle")
-    .attr("class", "node")
-    .attr("r", 10)
-    .attr("fill", d => d.group === "textbook" ? "blue" : d.group === "unit" ? "green" : "red")
-    .call(d3.drag()
-      .on("start", dragstarted)
-      .on("drag", dragged)
-      .on("end", dragended));
+      const nodeEnter = node.enter().append("circle")
+        .attr("class", "node")
+        .attr("r", 10)
+        .attr("fill", d => d.group === "textbook" ? "blue" : d.group === "unit" ? "green" : "red")
+        .call(d3.drag()
+          .on("start", dragstarted)
+          .on("drag", dragged)
+          .on("end", dragended));
 
       // **ツールチップのイベントを付与**
       nodeEnter.on("mouseover", function (event, d) {
