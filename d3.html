@@ -175,9 +175,32 @@
     }
 
     function reset() {
+      if (!window.graphData) return; // 初回呼び出し時は何もしない
+
+      // ノード・リンクのデータをクリア
+      window.graphData.nodes = [];
+      window.graphData.links = [];
+      // ノード・リンクのデータを完全リセット
+      window.graphData.nodes.length = 0;
+      window.graphData.links.length = 0;
+
+      // ズームのリセット
       const svg = d3.select("#graph");
-      svg.selectAll("*").remove();
+      svg.transition().duration(750).call(window.zoom.transform, d3.zoomIdentity);
+
       d3.select("#tooltip").remove();
+
+      // 描画をクリア
+      const zoomContainer = svg.select(".zoom-container");
+      if (!zoomContainer.empty()) {
+        zoomContainer.attr("transform", "translate(0,0) scale(1)");
+        // 明示的にリンク・ノードを削除
+        zoomContainer.selectAll(".link").remove();
+        zoomContainer.selectAll(".node").remove();
+        zoomContainer.selectAll(".label").remove();
+      }
+
+      // シミュレーションのリセット
       if (window.simulation) {
         window.simulation.stop();  // シミュレーション停止
         window.simulation.nodes([]); // ノードデータを空に
@@ -187,8 +210,8 @@
 
     function renderGraph(newNodes, newLinks, clear = true) {
       const width = 800, height = 600;
-  
-      // 既存のデータ取得
+
+      // 初回のみSVGを作成
       let svg = d3.select("#graph");
       if (svg.empty()) {
         svg = d3.select("body").append("svg")
@@ -200,7 +223,50 @@
         reset();
       }
 
-      // ツールチップ用のdivを確保（なければ作成）
+      // ズームコンテナの取得または作成
+      let zoomContainer = svg.select(".zoom-container");
+      if (zoomContainer.empty()) {
+        zoomContainer = svg.append("g").attr("class", "zoom-container");
+      }
+
+      // 初回のみZoomを設定
+      if (!window.zoom) {
+        window.zoom = d3.zoom()
+          .scaleExtent([0.5, 5])
+          .on("zoom", (event) => {
+            zoomContainer.attr("transform", event.transform);
+          });
+        svg.call(window.zoom);
+      }
+
+      // 既存のノード・リンクを `window.graphData` に保存
+      if (!window.graphData) {
+        window.graphData = { nodes: [], links: [] };
+      }
+
+      // 既存のノード・リンクのIDをセットに
+      const existingNodeIds = new Set(window.graphData.nodes.map(n => n.id));
+      const existingLinkPairs = new Set(window.graphData.links.map(l => JSON.stringify([l.source, l.target])));
+
+      // 重複を排除して新規ノード・リンクを追加
+      newNodes = newNodes.filter(n => !existingNodeIds.has(n.id));
+      newLinks = newLinks.filter(l => !existingLinkPairs.has(JSON.stringify([l.source, l.target])));
+      console.log(newLinks, newNodes)
+
+      window.graphData.nodes.push(...newNodes);
+      window.graphData.links.push(...newLinks);
+
+      // シミュレーションの設定（初回のみ作成）
+      if (!window.simulation) {
+        window.simulation = d3.forceSimulation()
+          .force("link", d3.forceLink().id(d => d.id).distance(100))
+          .force("charge", d3.forceManyBody().strength(-300))
+          .force("center", d3.forceCenter(width / 2, height / 2));
+      }
+
+      const simulation = window.simulation;
+
+        // **ツールチップ要素を事前に定義**
       let tooltip = d3.select("#tooltip");
       if (tooltip.empty()) {
         tooltip = d3.select("body").append("div")
@@ -213,61 +279,32 @@
           .style("font-size", "12px");
       }
 
-      // シミュレーションのグローバル変数を確保
-      if (!window.simulation) {
-        window.simulation = d3.forceSimulation()
-          .force("link", d3.forceLink().id(d => d.id).distance(100))
-          .force("charge", d3.forceManyBody().strength(-300))
-          .force("center", d3.forceCenter(width / 2, height / 2))
-          .force("x", d3.forceX(width / 2).strength(0.1))
-          .force("y", d3.forceY(height / 2).strength(0.1));
-      }
-      const simulation = window.simulation;
+      // リンクの描画
+      const link = zoomContainer.selectAll(".link")
+        .data(window.graphData.links, d => d.source.id + "-" + d.target.id);
 
-      // すでに描画済みのデータを取得
-      let existingNodes = simulation.nodes();
-      let existingLinks = simulation.force("link").links();
+  link.enter().append("line")
+    .attr("class", "link")
+    .attr("stroke", "#999")
+    .attr("stroke-width", 2)
+    .merge(link);
 
-      // 既存のノードIDをセットに
-      const existingNodeIds = new Set(existingNodes.map(n => n.id));
+  link.exit().remove();
 
-      // 既存のリンク(ソース, ターゲット)ペアをセットに
-      const existingLinkPairs = new Set(existingLinks.map(l => JSON.stringify([l.source.id, l.target.id])));
+  // ノードの描画
+  const node = zoomContainer.selectAll(".node")
+    .data(window.graphData.nodes, d => d.id);
 
-      // 重複しない新規ノードを追加
-      newNodes = newNodes.filter(n => !existingNodeIds.has(n.id));
-      const updatedNodes = [...existingNodes, ...newNodes];
+  const nodeEnter = node.enter().append("circle")
+    .attr("class", "node")
+    .attr("r", 10)
+    .attr("fill", d => d.group === "textbook" ? "blue" : d.group === "unit" ? "green" : "red")
+    .call(d3.drag()
+      .on("start", dragstarted)
+      .on("drag", dragged)
+      .on("end", dragended));
 
-      // 重複しない新規リンクを追加
-      newLinks = newLinks.filter(l => !existingLinkPairs.has(JSON.stringify([l.source, l.target])));
-      const updatedLinks = [...existingLinks, ...newLinks];
-
-      // リンクの描画・更新
-      const link = svg.selectAll(".link")
-        .data(updatedLinks, d => d.source.id + "-" + d.target.id);
-
-      link.enter().append("line")
-        .attr("class", "link")
-        .attr("stroke", "#999")
-        .attr("stroke-width", 2)
-        .merge(link);
-
-      link.exit().remove();
-
-      // ノードの描画・更新
-      const node = svg.selectAll(".node")
-        .data(updatedNodes, d => d.id);
-
-      const nodeEnter = node.enter().append("circle")
-        .attr("class", "node")
-        .attr("r", 10)
-        .attr("fill", d => d.group === "textbook" ? "blue" : d.group === "unit" ? "green" : "red")
-        .call(d3.drag()
-          .on("start", dragstarted)
-          .on("drag", dragged)
-          .on("end", dragended));
-
-      // ツールチップイベントを追加
+      // **ツールチップのイベントを付与**
       nodeEnter.on("mouseover", function (event, d) {
         tooltip.style("visibility", "visible").text(d.label);
       })
@@ -279,17 +316,15 @@
         tooltip.style("visibility", "hidden");
       });
 
-      nodeEnter.merge(node);
+      // 既存ノードと結合
+      node.merge(nodeEnter);
       node.exit().remove();
 
-      // ラベルの描画・更新
-      const label = svg.selectAll(".label")
-        .data(updatedNodes, d => d.id);
+      // ラベルの描画
+      const label = zoomContainer.selectAll(".label")
+        .data(window.graphData.nodes, d => d.id);
 
       const labelEnter = label.enter()
-        .append("a")
-        .attr("xlink:href", d => d.id)
-        .attr("target", "_blank")
         .append("text")
         .attr("class", "label")
         .attr("dy", -10)
@@ -300,22 +335,22 @@
       label.exit().remove();
 
       // シミュレーション更新
-      simulation.nodes(updatedNodes);
-      simulation.force("link").links(updatedLinks);
+      simulation.nodes(window.graphData.nodes);
+      simulation.force("link").links(window.graphData.links);
       simulation.alpha(1).restart();
 
       simulation.on("tick", () => {
-        svg.selectAll(".link")
+        zoomContainer.selectAll(".link")
           .attr("x1", d => d.source.x)
           .attr("y1", d => d.source.y)
           .attr("x2", d => d.target.x)
           .attr("y2", d => d.target.y);
 
-        svg.selectAll(".node")
+        zoomContainer.selectAll(".node")
           .attr("cx", d => d.x)
           .attr("cy", d => d.y);
 
-        svg.selectAll(".label")
+        zoomContainer.selectAll(".label")
           .attr("x", d => d.x)
           .attr("y", d => d.y);
       });
