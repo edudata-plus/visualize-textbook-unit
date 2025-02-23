@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>教科書関係可視化</title>
   <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ldfetch@1.2/dist/main.min.js"></script>
   <style>
     #graph {
       width: 100%;
@@ -197,6 +198,40 @@
       }
     }
 
+    async function ldfetchItemDetails(nodes) {
+      const nodesToFetch = nodes.filter(n => n.group === "detail" && n.id && !window.tooltipData[n.id]);
+      if (nodesToFetch.length === 0) return;
+      console.log(`LD Fetching details for ${nodesToFetch.length} nodes...`);
+      try {
+        let fetcher = new window.ldfetch();
+        const results = await Promise.all(nodesToFetch.map(async node => {
+          try {
+            let objects = await fetcher.get(node.id).then(response => {
+              console.log(`Fetching... ${node.id}`);
+              return fetcher.frame(response.triples, {'@graph':{}});
+            });
+            //console.log(objects);
+            let description = "";
+            objects["@graph"].forEach(e => {
+              if (e["@id"] == node.id) {
+                description = e["http://schema.org/description"]["@value"];
+              }
+            });
+            return { id: node.id, description: description };
+          } catch (error) {
+            console.error(`Failed to fetch for ${node.id}`, error);
+            return { id: node.id, description: "Error fetching data" };
+          }
+        }));
+        //console.log(results);
+        results.forEach(({ id, description }) => {
+          window.tooltipData[id] = description;
+        });
+      } catch (error) {
+        console.error("Failed to fetch node details", error);
+      }
+    }
+
     function reset() {
       if (!window.graphData) return; // 初回呼び出し時は何もしない
 
@@ -264,6 +299,10 @@
         svg.call(window.zoom);
       }
 
+      if (!window.tooltipData) {
+        window.tooltipData = {};
+      }
+
       // 既存のノード・リンクを `window.graphData` に保存
       if (!window.graphData) {
         window.graphData = { nodes: [], links: [] };
@@ -276,10 +315,12 @@
       // 重複を排除して新規ノード・リンクを追加
       newNodes = newNodes.filter(n => !existingNodeIds.has(n.id));
       newLinks = newLinks.filter(l => !existingLinkPairs.has(JSON.stringify([l.source, l.target])));
-      console.log(newLinks, newNodes)
+      //console.log(newLinks, newNodes)
 
       window.graphData.nodes.push(...newNodes);
       window.graphData.links.push(...newLinks);
+
+      ldfetchItemDetails(newNodes);
 
       // シミュレーションの設定（初回のみ作成）
       if (!window.simulation) {
@@ -329,7 +370,8 @@
 
       // **ツールチップのイベントを付与**
       nodeEnter.on("mouseover", function (event, d) {
-        tooltip.style("visibility", "visible").text(d.label);
+        tooltip.style("visibility", "visible")
+          .text(window.tooltipData[d.id] || d.label);
       })
       .on("mousemove", function (event) {
         tooltip.style("top", (event.pageY + 10) + "px")
