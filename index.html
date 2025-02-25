@@ -162,7 +162,7 @@
                        <${uri}> schema:name ?title;
                          dct:bibliographicCitation ?bib.
                        ?unit schema:name ?name.
-                       ?unit <https://w3id.org/jp-cos/cosItem> ?item.
+                       OPTIONAL { ?unit <https://w3id.org/jp-cos/cosItem> ?item. }
                      }`;
       
       const url = endpoint + "?query=" + encodeURIComponent(query) + "&format=json";
@@ -180,11 +180,13 @@
           }
           links.push({ source: textbookNode.id, target: row.unit.value });
           
-          if (!nodes.find(n => n.id === row.item.value)) {
-            let itemLabel = row.item.value.slice(-16); // URIの末尾16桁をラベルとして使用
-            nodes.push({ id: row.item.value, label: itemLabel, group: "detail" });
+          if (row.item) {
+            if (!nodes.find(n => n.id === row.item.value)) {
+              let itemLabel = row.item.value.slice(-16); // URIの末尾16桁をラベルとして使用
+              nodes.push({ id: row.item.value, label: itemLabel, group: "detail" });
+            }
+            links.push({ source: row.unit.value, target: row.item.value });
           }
-          links.push({ source: row.unit.value, target: row.item.value });
         }
         renderGraph(nodes, links, clear);
 
